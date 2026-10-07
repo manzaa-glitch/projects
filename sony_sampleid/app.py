@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from urllib.request import urlretrieve
 
 import librosa
 import numpy as np
@@ -13,12 +14,29 @@ import torch
 
 from sampleid import SampleID
 
+
 SR = 16_000
+CKPT_URL = "https://zenodo.org/records/17413869/files/sampleid-best.ckpt?download=1"
+CACHE_DIR = Path.home() / ".lastrada_sampleid"
+CKPT_PATH = CACHE_DIR / "sampleid-best.ckpt"
+
+
+def ensure_checkpoint() -> Path:
+    """Download Sony's checkpoint to a normal user-writable folder.
+
+    Sony's default loader tries to place the checkpoint inside site-packages.
+    On Windows that can fail or behave inconsistently, so this app uses a local cache.
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    if not CKPT_PATH.exists():
+        urlretrieve(CKPT_URL, CKPT_PATH)
+    return CKPT_PATH
 
 
 @st.cache_resource
 def load_model():
-    model = SampleID.load_checkpoint()
+    ckpt = ensure_checkpoint()
+    model = SampleID.load_checkpoint(ckpt_path=str(ckpt))
     model.eval()
     return model
 
@@ -54,11 +72,13 @@ def embed(model, audio_chunks: np.ndarray, batch_size: int = 32) -> np.ndarray:
 
 def analyze(original_path: str, derivative_path: str, chunk_seconds: float, hop_seconds: float, top_k: int):
     model = load_model()
+
     o_audio, o_spans = chunk_audio(original_path, chunk_seconds, hop_seconds)
     d_audio, d_spans = chunk_audio(derivative_path, chunk_seconds, hop_seconds)
 
     o = embed(model, o_audio)
     d = embed(model, d_audio)
+
     sim = d @ o.T
     flat_idx = np.argsort(sim.ravel())[::-1]
 
@@ -72,10 +92,12 @@ def analyze(original_path: str, derivative_path: str, chunk_seconds: float, hop_
             "derivative_start_s": round(d_spans[di][0], 2),
             "derivative_end_s": round(d_spans[di][1], 2),
         })
+
     return pd.DataFrame(rows)
 
 
 st.set_page_config(page_title="Lastrada SampleID", page_icon="🎵", layout="wide")
+
 st.title("Lastrada SampleID")
 st.caption("Upload a known original song and a sampled/derivative song to find likely matching regions using Sony's pretrained SampleID model.")
 
@@ -109,8 +131,14 @@ if original and derivative:
                 else:
                     st.success("Analysis complete")
                     st.dataframe(df, use_container_width=True)
+
                     csv = df.to_csv(index=False).encode("utf-8")
-                    st.download_button("Download matches CSV", data=csv, file_name="sampleid_matches.csv", mime="text/csv")
+                    st.download_button(
+                        "Download matches CSV",
+                        data=csv,
+                        file_name="sampleid_matches.csv",
+                        mime="text/csv",
+                    )
 
                     if not df.empty:
                         best = df.iloc[0]
