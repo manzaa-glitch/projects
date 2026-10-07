@@ -7,17 +7,16 @@ Pretrained checkpoint: https://zenodo.org/records/17413869
 
 ## What this POC does
 
-Given a **known original song** and a **known sampled/derivative song**, the script:
-
+Given a **known original song** and a **known sampled/derivative song**, the tool:
 1. converts both songs to mono 16 kHz audio;
-2. slices them into overlapping 5-second windows;
+2. slices them into overlapping windows;
 3. runs every window through Sony's released pretrained SampleID model;
-4. compares the resulting embeddings; and
-5. prints the strongest candidate source ↔ derivative timestamp pairs.
+4. compares the embeddings; and
+5. returns the strongest candidate source ↔ derivative timestamp pairs.
 
-This is intended as **Step 1 candidate localization**, not as a final Nature of Use determination or legal-grade boundary detector. A later refinement step should tighten start/end boundaries and compute total occupied duration / coverage.
+This is **candidate localization**, not a final Nature of Use determination or legal-grade boundary detector.
 
-## Setup
+## Simple upload interface
 
 Sony currently declares Python **3.12+**.
 
@@ -29,9 +28,22 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-The first run will download Sony's published pretrained checkpoint automatically.
+Launch the app:
 
-## Run
+```bash
+streamlit run app.py
+```
+
+Then:
+1. upload the original/source song;
+2. upload the sampled/derivative song;
+3. click **Analyze**;
+4. review the strongest candidate timestamp matches; and
+5. download the results as CSV if needed.
+
+The first run may take longer because Sony's published pretrained checkpoint is downloaded automatically.
+
+## Command line option
 
 ```bash
 python compare_songs.py \
@@ -46,27 +58,7 @@ Defaults:
 - hop size: **2.5 seconds**
 - output: top **20** matching window pairs
 
-You can change the granularity:
-
-```bash
-python compare_songs.py original.wav derivative.wav \
-  --chunk-seconds 5 \
-  --hop-seconds 1
-```
-
-A smaller hop gives denser candidate timestamps but increases compute and does **not** by itself make the boundaries more accurate.
-
-## Expected output
-
-```text
-similarity | original (s) | derivative (s)
-----------------------------------------------------------
-0.91       | 42.50-47.50  | 70.00-75.00
-0.89       | 42.50-47.50  | 95.00-100.00
-...
-```
-
-These are candidate matching windows to pass into the next timing-refinement / Nature of Use step.
+A smaller hop gives denser candidate timestamps but does **not** by itself make the boundaries more accurate.
 
 ## Important limitations
 
