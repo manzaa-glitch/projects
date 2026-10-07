@@ -18,30 +18,22 @@ This is **candidate localization**, not a final Nature of Use determination or l
 
 ## Simple upload interface
 
-Sony currently declares Python **3.12+**.
+### Windows setup
 
-```bash
-cd sony_sampleid
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
+Sony's inference checkpoint references internal modules under `sampleid/src`. A normal pip install can omit those source folders, so on Windows use the included editable-install helper:
+
+```powershell
+cd C:\Users\saral\projects\sony_sampleid
+powershell -ExecutionPolicy Bypass -File .\setup_windows.ps1
 ```
 
-Launch the app:
+Then launch:
 
-```bash
-streamlit run app.py
+```powershell
+.\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-Then:
-1. upload the original/source song;
-2. upload the sampled/derivative song;
-3. click **Analyze**;
-4. review the strongest candidate timestamp matches; and
-5. download the results as CSV if needed.
-
-The first run may take longer because Sony's published pretrained checkpoint is downloaded automatically.
+This clones Sony's repository into `vendor/sampleid` and installs it in editable mode so Hydra can resolve the internal network classes used by the published checkpoint.
 
 ## Command line option
 
