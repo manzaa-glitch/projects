@@ -11,6 +11,7 @@ import argparse
 import csv
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.request import urlretrieve
 
 import librosa
 import numpy as np
@@ -20,6 +21,9 @@ from sampleid import SampleID
 
 
 SR = 16_000
+CKPT_URL = "https://zenodo.org/records/17413869/files/sampleid-best.ckpt?download=1"
+CACHE_DIR = Path.home() / ".lastrada_sampleid"
+CKPT_PATH = CACHE_DIR / "sampleid-best.ckpt"
 
 
 @dataclass
@@ -27,6 +31,14 @@ class Chunk:
     start: float
     end: float
     audio: np.ndarray
+
+
+def ensure_checkpoint() -> Path:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    if not CKPT_PATH.exists():
+        print(f"Downloading Sony checkpoint to {CKPT_PATH} ...")
+        urlretrieve(CKPT_URL, CKPT_PATH)
+    return CKPT_PATH
 
 
 def load_chunks(path: str, chunk_seconds: float, hop_seconds: float) -> list[Chunk]:
@@ -48,7 +60,6 @@ def load_chunks(path: str, chunk_seconds: float, hop_seconds: float) -> list[Chu
             )
         )
 
-    # Handle files shorter than one chunk.
     if not chunks:
         audio = np.pad(y, (0, max(0, chunk_n - len(y))))[:chunk_n].astype(np.float32)
         chunks.append(Chunk(start=0.0, end=len(y) / SR, audio=audio))
@@ -81,8 +92,9 @@ def main() -> None:
     if args.hop_seconds <= 0 or args.chunk_seconds <= 0:
         raise SystemExit("chunk and hop sizes must be positive")
 
+    ckpt = ensure_checkpoint()
     print("Loading Sony SampleID pretrained checkpoint...")
-    model = SampleID.load_checkpoint()
+    model = SampleID.load_checkpoint(ckpt_path=str(ckpt))
     model.eval()
 
     print("Chunking audio...")
@@ -96,7 +108,6 @@ def main() -> None:
     o = embed(model, original_chunks)
     d = embed(model, derivative_chunks)
 
-    # Embeddings are unit-normalized, so dot product is cosine similarity.
     sim = d @ o.T
     flat_idx = np.argsort(sim.ravel())[::-1]
 
@@ -104,7 +115,6 @@ def main() -> None:
     seen = set()
     for idx in flat_idx:
         di, oi = np.unravel_index(idx, sim.shape)
-        # Avoid emitting exact duplicate window pairs.
         key = (di, oi)
         if key in seen:
             continue
