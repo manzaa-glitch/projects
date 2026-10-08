@@ -99,9 +99,9 @@ def analyze(original_path: str, derivative_path: str, chunk_seconds: float, hop_
     return pd.DataFrame(rows)
 
 
-st.set_page_config(page_title="Lastrada SampleID", page_icon="🎵", layout="wide")
+st.set_page_config(page_title="Applied AI SampleID", page_icon="🎵", layout="wide")
 
-st.title("Lastrada SampleID")
+st.title("Applied AI SampleID")
 st.caption("Upload a known original song and a sampled/derivative song to find likely matching regions using Sony's pretrained SampleID model.")
 
 with st.expander("Settings", expanded=False):
@@ -113,7 +113,7 @@ with st.expander("Settings", expanded=False):
         max_value=1.0,
         value=0.60,
         step=0.01,
-        help="Only candidate window pairs with cosine similarity at or above this value will be shown. This threshold is experimental and must be calibrated on Lastrada examples.",
+        help="Only candidate window pairs with cosine similarity at or above this value will be shown. This threshold is experimental and must be calibrated on Applied AI project examples.",
     )
 
 left, right = st.columns(2)
