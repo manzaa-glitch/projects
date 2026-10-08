@@ -18,7 +18,10 @@ from sampleid import SampleID
 
 
 SR = 16_000
-CKPT_URL = "https://zenodo.org/records/17413869/files/sampleid-best.ckpt?download=1"
+CKPT_URLS = [
+    "https://zenodo.org/api/records/17413869/files/sampleid-best.ckpt/content",
+    "https://zenodo.org/records/17413869/files/sampleid-best.ckpt?download=1",
+]
 CACHE_DIR = Path.home() / ".lastrada_sampleid"
 CKPT_PATH = CACHE_DIR / "sampleid-best.ckpt"
 
@@ -46,22 +49,39 @@ def ensure_checkpoint(force: bool = False) -> Path:
     part_path = CKPT_PATH.with_suffix(".ckpt.part")
     part_path.unlink(missing_ok=True)
 
-    req = Request(CKPT_URL, headers={"User-Agent": "Mozilla/5.0"})
+    last_error = None
     try:
-        with urlopen(req, timeout=120) as response, open(part_path, "wb") as out:
-            while True:
-                chunk = response.read(1024 * 1024)
-                if not chunk:
-                    break
-                out.write(chunk)
-
-        if not _checkpoint_is_valid(part_path):
-            raise RuntimeError(
-                "Sony checkpoint download was incomplete or was not a valid PyTorch checkpoint."
+        for url in CKPT_URLS:
+            part_path.unlink(missing_ok=True)
+            req = Request(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0",
+                    "Accept": "application/octet-stream,*/*",
+                },
             )
+            try:
+                with urlopen(req, timeout=180) as response, open(part_path, "wb") as out:
+                    while True:
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        out.write(chunk)
 
-        os.replace(part_path, CKPT_PATH)
-        return CKPT_PATH
+                if not _checkpoint_is_valid(part_path):
+                    raise RuntimeError(
+                        "Checkpoint download completed but the file was incomplete or invalid."
+                    )
+
+                os.replace(part_path, CKPT_PATH)
+                return CKPT_PATH
+            except Exception as exc:
+                last_error = exc
+
+        raise RuntimeError(
+            "Streamlit Cloud could not download Sony's public checkpoint from Zenodo. "
+            f"Last download error: {last_error}"
+        )
     finally:
         part_path.unlink(missing_ok=True)
 
