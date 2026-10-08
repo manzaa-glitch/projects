@@ -70,7 +70,7 @@ def embed(model, audio_chunks: np.ndarray, batch_size: int = 32) -> np.ndarray:
     return np.concatenate(outputs, axis=0)
 
 
-def analyze(original_path: str, derivative_path: str, chunk_seconds: float, hop_seconds: float, top_k: int):
+def analyze(original_path: str, derivative_path: str, chunk_seconds: float, hop_seconds: float, min_similarity: float):
     model = load_model()
 
     o_audio, o_spans = chunk_audio(original_path, chunk_seconds, hop_seconds)
@@ -83,10 +83,13 @@ def analyze(original_path: str, derivative_path: str, chunk_seconds: float, hop_
     flat_idx = np.argsort(sim.ravel())[::-1]
 
     rows = []
-    for idx in flat_idx[:top_k]:
+    for idx in flat_idx:
         di, oi = np.unravel_index(idx, sim.shape)
+        score = float(sim[di, oi])
+        if score < min_similarity:
+            break
         rows.append({
-            "similarity": round(float(sim[di, oi]), 4),
+            "similarity": round(score, 4),
             "original_start_s": round(o_spans[oi][0], 2),
             "original_end_s": round(o_spans[oi][1], 2),
             "derivative_start_s": round(d_spans[di][0], 2),
@@ -104,7 +107,14 @@ st.caption("Upload a known original song and a sampled/derivative song to find l
 with st.expander("Settings", expanded=False):
     chunk_seconds = st.number_input("Chunk size (seconds)", min_value=2.0, max_value=15.0, value=5.0, step=0.5)
     hop_seconds = st.number_input("Hop size (seconds)", min_value=0.5, max_value=10.0, value=2.5, step=0.5)
-    top_k = st.number_input("Number of candidate matches", min_value=5, max_value=100, value=20, step=5)
+    min_similarity = st.slider(
+        "Minimum match threshold",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.60,
+        step=0.01,
+        help="Only candidate window pairs with cosine similarity at or above this value will be shown. This threshold is experimental and must be calibrated on Lastrada examples.",
+    )
 
 left, right = st.columns(2)
 with left:
@@ -125,22 +135,25 @@ if original and derivative:
                 deriv_path.write_bytes(derivative.getbuffer())
 
                 try:
-                    df = analyze(str(orig_path), str(deriv_path), float(chunk_seconds), float(hop_seconds), int(top_k))
+                    df = analyze(str(orig_path), str(deriv_path), float(chunk_seconds), float(hop_seconds), float(min_similarity))
                 except Exception as e:
                     st.error(f"Analysis failed: {e}")
                 else:
                     st.success("Analysis complete")
-                    st.dataframe(df, use_container_width=True)
+                    if df.empty:
+                        st.warning(f"No candidate matches met the {min_similarity:.2f} minimum threshold.")
+                    else:
+                        st.write(f"{len(df)} candidate window pair(s) met the threshold.")
+                        st.dataframe(df, use_container_width=True)
 
-                    csv = df.to_csv(index=False).encode("utf-8")
-                    st.download_button(
-                        "Download matches CSV",
-                        data=csv,
-                        file_name="sampleid_matches.csv",
-                        mime="text/csv",
-                    )
+                        csv = df.to_csv(index=False).encode("utf-8")
+                        st.download_button(
+                            "Download matches CSV",
+                            data=csv,
+                            file_name="sampleid_matches.csv",
+                            mime="text/csv",
+                        )
 
-                    if not df.empty:
                         best = df.iloc[0]
                         st.markdown(
                             f"**Best candidate:** original {best.original_start_s:.2f}–{best.original_end_s:.2f}s "
