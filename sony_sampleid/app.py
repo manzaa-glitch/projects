@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from urllib.request import urlretrieve
+import os
+import zipfile
+from urllib.request import Request, urlopen
 
 import librosa
 import numpy as np
@@ -21,24 +23,67 @@ CACHE_DIR = Path.home() / ".lastrada_sampleid"
 CKPT_PATH = CACHE_DIR / "sampleid-best.ckpt"
 
 
-def ensure_checkpoint() -> Path:
-    """Download Sony's checkpoint to a normal user-writable folder.
+def _checkpoint_is_valid(path: Path) -> bool:
+    """Quickly reject partial/HTML downloads before torch.load sees them."""
+    return path.exists() and path.stat().st_size > 10_000_000 and zipfile.is_zipfile(path)
 
-    Sony's default loader tries to place the checkpoint inside site-packages.
-    On Windows that can fail or behave inconsistently, so this app uses a local cache.
+
+def ensure_checkpoint(force: bool = False) -> Path:
+    """Download Sony's checkpoint atomically into a writable cache.
+
+    Streamlit Cloud can interrupt a large first-time download. Writing to a .part
+    file first prevents an incomplete checkpoint from being reused on later runs.
     """
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    if not CKPT_PATH.exists():
-        urlretrieve(CKPT_URL, CKPT_PATH)
-    return CKPT_PATH
+
+    if force and CKPT_PATH.exists():
+        CKPT_PATH.unlink(missing_ok=True)
+
+    if _checkpoint_is_valid(CKPT_PATH):
+        return CKPT_PATH
+
+    CKPT_PATH.unlink(missing_ok=True)
+    part_path = CKPT_PATH.with_suffix(".ckpt.part")
+    part_path.unlink(missing_ok=True)
+
+    req = Request(CKPT_URL, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urlopen(req, timeout=120) as response, open(part_path, "wb") as out:
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+
+        if not _checkpoint_is_valid(part_path):
+            raise RuntimeError(
+                "Sony checkpoint download was incomplete or was not a valid PyTorch checkpoint."
+            )
+
+        os.replace(part_path, CKPT_PATH)
+        return CKPT_PATH
+    finally:
+        part_path.unlink(missing_ok=True)
 
 
 @st.cache_resource
 def load_model():
-    ckpt = ensure_checkpoint()
-    model = SampleID.load_checkpoint(ckpt_path=str(ckpt))
-    model.eval()
-    return model
+    # Retry once if a previously cached checkpoint is corrupt.
+    last_error = None
+    for attempt in range(2):
+        try:
+            ckpt = ensure_checkpoint(force=(attempt == 1))
+            model = SampleID.load_checkpoint(ckpt_path=str(ckpt))
+            model.eval()
+            return model
+        except (RuntimeError, OSError, EOFError) as exc:
+            last_error = exc
+            CKPT_PATH.unlink(missing_ok=True)
+
+    raise RuntimeError(
+        "Could not load Sony's pretrained checkpoint after re-downloading it. "
+        f"Last error: {last_error}"
+    )
 
 
 def chunk_audio(path: str, chunk_seconds: float, hop_seconds: float):
