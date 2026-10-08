@@ -16,6 +16,13 @@ Given a **known original song** and a **known sampled/derivative song**, the too
 
 This is **candidate localization**, not a final Nature of Use determination or legal-grade boundary detector.
 
+
+## Run in Google Colab (recommended for iPad)
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/manzaa-glitch/projects/blob/main/sony_sampleid/Applied_AI_SampleID_Colab.ipynb)
+
+On an iPad, open the Colab link above and run each cell from top to bottom. The notebook will let you upload the source song and derivative song, run Sony SampleID in the browser, display matching timestamp windows, and download a CSV.
+
 ## Simple upload interface
 
 Sony currently declares Python **3.12+**.
