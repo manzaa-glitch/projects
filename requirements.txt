@@ -1,0 +1,8 @@
+-e git+https://github.com/sony/sampleid.git#egg=sampleid
+librosa>=0.10
+numpy>=1.26
+pandas>=2.2
+scipy>=1.12
+streamlit>=1.39
+torch>=2.2
+soundfile>=0.12
