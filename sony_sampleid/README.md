@@ -17,7 +17,14 @@ Given a **known original song** and a **known sampled/derivative song**, the too
 This is **candidate localization**, not a final Nature of Use determination or legal-grade boundary detector.
 
 
-## Run in Google Colab (recommended for iPad)
+
+## End-to-end Sony + DTW Colab (recommended)
+
+[![Open End-to-End Pipeline In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/manzaa-glitch/projects/blob/main/sony_sampleid/Applied_AI_End_to_End_Sony_DTW_Colab.ipynb)
+
+This notebook processes the entire pipeline automatically: upload two songs, run Sony localization and grouping, refine every Sony placement with librosa DTW, calculate unique detected duration / coverage, and download all outputs as one ZIP.
+
+## Sony-only Google Colab
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/manzaa-glitch/projects/blob/main/sony_sampleid/Applied_AI_SampleID_Colab.ipynb)
 
