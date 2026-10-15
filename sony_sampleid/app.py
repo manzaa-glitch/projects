@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tempfile
+import sys
 from pathlib import Path
 from urllib.request import urlretrieve
 
@@ -13,6 +14,12 @@ import streamlit as st
 import torch
 
 from sampleid import SampleID
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from dtw_refinement.batch_refine import refine_sony_detail
 
 
 SR = 16_000
@@ -454,6 +461,29 @@ with st.expander("Settings", expanded=False):
         help="A candidate region must be supported by this many time-progressing window matches. Higher values are stricter but can miss very short samples.",
     )
 
+    st.divider()
+    auto_refine_dtw = st.checkbox(
+        "Automatically run DTW refinement on all Sony placements",
+        value=True,
+        help="After Sony groups the likely sample placements, run librosa DTW on every placement to tighten the derivative timestamps.",
+    )
+    dtw_padding = st.slider(
+        "DTW search padding (seconds)",
+        min_value=1.0,
+        max_value=20.0,
+        value=8.0,
+        step=1.0,
+        disabled=not auto_refine_dtw,
+    )
+    dtw_max_pitch = st.slider(
+        "DTW pitch search (+/- semitones)",
+        min_value=0,
+        max_value=12,
+        value=6,
+        step=1,
+        disabled=not auto_refine_dtw,
+    )
+
 left, right = st.columns(2)
 with left:
     original = st.file_uploader("Original / source song", type=["wav", "mp3", "flac", "m4a"], key="original")
@@ -551,6 +581,91 @@ if original and derivative:
                         st.caption(
                             "Sequence and group scores are relative heuristics for organizing evidence, not probabilities of sampling."
                         )
+
+                        if auto_refine_dtw:
+                            st.subheader("DTW-refined placements")
+                            st.caption(
+                                "Each Sony placement is now processed with librosa subsequence DTW. "
+                                "This tightens the derivative start/end around Sony's candidate and estimates a rough pitch shift."
+                            )
+
+                            progress = st.progress(0.0, text="Preparing DTW refinement...")
+
+                            def _dtw_progress(done, total):
+                                frac = 1.0 if total == 0 else min(1.0, done / total)
+                                progress.progress(
+                                    frac,
+                                    text=f"Refining Sony placements with DTW: {done}/{total}",
+                                )
+
+                            try:
+                                refined_detail_df, refined_summary_df = refine_sony_detail(
+                                    str(orig_path),
+                                    str(deriv_path),
+                                    detail_df,
+                                    search_padding_s=float(dtw_padding),
+                                    max_pitch_shift_semitones=int(dtw_max_pitch),
+                                    progress_callback=_dtw_progress,
+                                )
+                            except Exception as exc:
+                                progress.empty()
+                                st.error(f"DTW batch refinement failed: {exc}")
+                            else:
+                                progress.progress(1.0, text="DTW refinement complete")
+                                st.markdown("**Refined group summary**")
+                                st.dataframe(
+                                    refined_summary_df,
+                                    use_container_width=True,
+                                    hide_index=True,
+                                )
+
+                                with st.expander("All refined placements", expanded=True):
+                                    st.dataframe(
+                                        refined_detail_df,
+                                        use_container_width=True,
+                                        hide_index=True,
+                                    )
+
+                                good = refined_detail_df[
+                                    refined_detail_df["status"] == "ok"
+                                ]
+                                failed = refined_detail_df[
+                                    refined_detail_df["status"] != "ok"
+                                ]
+                                total_refined_seconds = (
+                                    refined_summary_df["total_refined_seconds"].sum()
+                                    if not refined_summary_df.empty
+                                    else 0.0
+                                )
+
+                                m1, m2, m3 = st.columns(3)
+                                m1.metric("Placements refined", int(len(good)))
+                                m2.metric("Refinement failures", int(len(failed)))
+                                m3.metric(
+                                    "Sum of refined group durations",
+                                    f"{total_refined_seconds:.1f}s",
+                                )
+
+                                left_refine, right_refine = st.columns(2)
+                                with left_refine:
+                                    st.download_button(
+                                        "Download DTW group summary CSV",
+                                        data=refined_summary_df.to_csv(index=False).encode("utf-8"),
+                                        file_name="dtw_refined_group_summary.csv",
+                                        mime="text/csv",
+                                    )
+                                with right_refine:
+                                    st.download_button(
+                                        "Download all DTW-refined placements CSV",
+                                        data=refined_detail_df.to_csv(index=False).encode("utf-8"),
+                                        file_name="dtw_refined_placements.csv",
+                                        mime="text/csv",
+                                    )
+
+                                st.caption(
+                                    "DTW cost and pitch estimates are refinement signals, not proof of sampling. "
+                                    "This first DTW version treats each Sony source region as the query excerpt and refines the derivative side."
+                                )
 
 st.info(
     "This version does not call a sample from one high cosine score. It looks for ranked matches that move through both songs in a coherent time sequence. "
