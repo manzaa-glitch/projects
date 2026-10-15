@@ -304,6 +304,131 @@ def analyze(
     }
     return sequences, diagnostics
 
+
+def _interval_overlap_fraction(a_start, a_end, b_start, b_end):
+    inter = max(0.0, min(a_end, b_end) - max(a_start, b_start))
+    denom = max(1e-9, min(a_end - a_start, b_end - b_start))
+    return inter / denom
+
+
+def _union_duration(intervals):
+    if not intervals:
+        return 0.0
+    spans = sorted((float(s), float(e)) for s, e in intervals)
+    cur_s, cur_e = spans[0]
+    total = 0.0
+    for s, e in spans[1:]:
+        if s <= cur_e:
+            cur_e = max(cur_e, e)
+        else:
+            total += cur_e - cur_s
+            cur_s, cur_e = s, e
+    return total + (cur_e - cur_s)
+
+
+def _fmt_time(seconds):
+    seconds = max(0.0, float(seconds))
+    minutes = int(seconds // 60)
+    secs = seconds - 60 * minutes
+    return f"{minutes}:{secs:04.1f}"
+
+
+def _group_candidate_regions(df: pd.DataFrame):
+    """Group repeated derivative placements that point to the same source excerpt."""
+    if df.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    records = df.sort_values(
+        ["sequence_score", "matched_windows", "mean_source_rank"],
+        ascending=[False, False, True],
+    ).to_dict("records")
+
+    groups = []
+    for row in records:
+        target_group = None
+        for group in groups:
+            anchor = group["anchor"]
+            overlap = _interval_overlap_fraction(
+                row["original_start_s"], row["original_end_s"],
+                anchor["original_start_s"], anchor["original_end_s"],
+            )
+            if overlap >= 0.50:
+                target_group = group
+                break
+
+        if target_group is None:
+            target_group = {"anchor": row, "rows": []}
+            groups.append(target_group)
+
+        duplicate_idx = None
+        for i, old in enumerate(target_group["rows"]):
+            d_overlap = _interval_overlap_fraction(
+                row["derivative_start_s"], row["derivative_end_s"],
+                old["derivative_start_s"], old["derivative_end_s"],
+            )
+            if d_overlap >= 0.60:
+                duplicate_idx = i
+                break
+
+        if duplicate_idx is None:
+            target_group["rows"].append(row)
+        elif row["sequence_score"] > target_group["rows"][duplicate_idx]["sequence_score"]:
+            target_group["rows"][duplicate_idx] = row
+
+    groups.sort(key=lambda g: g["anchor"]["sequence_score"], reverse=True)
+
+    summary_rows = []
+    detail_rows = []
+
+    for group_num, group in enumerate(groups, start=1):
+        anchor = group["anchor"]
+        placements = sorted(group["rows"], key=lambda r: r["derivative_start_s"])
+        if not placements:
+            placements = [anchor]
+
+        derivative_intervals = [
+            (r["derivative_start_s"], r["derivative_end_s"]) for r in placements
+        ]
+        total_detected = _union_duration(derivative_intervals)
+
+        summary_rows.append(
+            {
+                "group": group_num,
+                "source_region": f"{_fmt_time(anchor['original_start_s'])}–{_fmt_time(anchor['original_end_s'])}",
+                "placements": len(placements),
+                "derivative_locations": "; ".join(
+                    f"{_fmt_time(r['derivative_start_s'])}–{_fmt_time(r['derivative_end_s'])}"
+                    for r in placements
+                ),
+                "total_detected_seconds": round(total_detected, 2),
+                "best_sequence_score": round(max(r["sequence_score"] for r in placements), 3),
+                "supported_windows": int(sum(r["matched_windows"] for r in placements)),
+                "best_mean_source_rank": round(min(r["mean_source_rank"] for r in placements), 2),
+            }
+        )
+
+        for occurrence_num, r in enumerate(placements, start=1):
+            detail_rows.append(
+                {
+                    "group": group_num,
+                    "occurrence": occurrence_num,
+                    "source_start": _fmt_time(r["original_start_s"]),
+                    "source_end": _fmt_time(r["original_end_s"]),
+                    "derivative_start": _fmt_time(r["derivative_start_s"]),
+                    "derivative_end": _fmt_time(r["derivative_end_s"]),
+                    "duration_s": round(r["derivative_end_s"] - r["derivative_start_s"], 2),
+                    "sequence_score": round(r["sequence_score"], 3),
+                    "supported_windows": int(r["matched_windows"]),
+                    "mean_source_rank": round(r["mean_source_rank"], 2),
+                    "alignment_slope": round(r["alignment_slope"], 3),
+                    "mean_similarity": round(r["mean_similarity"], 4),
+                }
+            )
+
+    summary_df = pd.DataFrame(summary_rows)
+    detail_df = pd.DataFrame(detail_rows)
+    return summary_df, detail_df
+
 st.set_page_config(page_title="Applied AI SampleID", page_icon="🎵", layout="wide")
 
 st.title("Applied AI SampleID")
@@ -382,25 +507,49 @@ if original and derivative:
                             "Try reducing Minimum sequence support for very short samples."
                         )
                     else:
-                        st.write(f"{len(df)} coherent candidate region(s) found.")
-                        st.dataframe(df, use_container_width=True)
+                        summary_df, detail_df = _group_candidate_regions(df)
 
-                        csv = df.to_csv(index=False).encode("utf-8")
-                        st.download_button(
-                            "Download candidate regions CSV",
-                            data=csv,
-                            file_name="sampleid_candidate_regions.csv",
-                            mime="text/csv",
-                        )
-
-                        best = df.iloc[0]
-                        st.markdown(
-                            f"**Top sequence:** original {best.original_start_s:.2f}–{best.original_end_s:.2f}s "
-                            f"↔ derivative {best.derivative_start_s:.2f}–{best.derivative_end_s:.2f}s "
-                            f"supported by {int(best.matched_windows)} ranked windows."
-                        )
+                        st.subheader("Likely sampled source groups")
                         st.caption(
-                            "Sequence score is a relative heuristic used to rank candidate regions; it is not a probability of sampling."
+                            "Results are grouped by overlapping source-song regions and sorted strongest-first. "
+                            "Repeated uses of the same source excerpt are combined into one group."
+                        )
+                        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+
+                        strongest = summary_df.iloc[0]
+                        st.markdown(
+                            f"**Top group:** source {strongest.source_region} appears in "
+                            f"{int(strongest.placements)} detected placement(s) in the derivative, "
+                            f"covering about {strongest.total_detected_seconds:.1f}s in total."
+                        )
+
+                        with st.expander("Detailed placements by group", expanded=True):
+                            st.caption(
+                                "Within each group, derivative placements are sorted chronologically."
+                            )
+                            st.dataframe(detail_df, use_container_width=True, hide_index=True)
+
+                        summary_csv = summary_df.to_csv(index=False).encode("utf-8")
+                        detail_csv = detail_df.to_csv(index=False).encode("utf-8")
+
+                        left_dl, right_dl = st.columns(2)
+                        with left_dl:
+                            st.download_button(
+                                "Download grouped summary CSV",
+                                data=summary_csv,
+                                file_name="sampleid_grouped_summary.csv",
+                                mime="text/csv",
+                            )
+                        with right_dl:
+                            st.download_button(
+                                "Download detailed placements CSV",
+                                data=detail_csv,
+                                file_name="sampleid_detailed_placements.csv",
+                                mime="text/csv",
+                            )
+
+                        st.caption(
+                            "Sequence and group scores are relative heuristics for organizing evidence, not probabilities of sampling."
                         )
 
 st.info(
