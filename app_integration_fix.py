@@ -29,3 +29,11 @@ _base.SEED_REPLACEMENT = _base.SEED_REPLACEMENT.replace(_OLD, _NEW, 1)
 
 def patch_app(source_root: Path) -> None:
     _base.patch_app(source_root)
+
+    # A Streamlit container can retain the cloned /tmp source across a code
+    # reload. Repair the first patch version even when its marker is already
+    # present, so users do not need to clear server storage manually.
+    app_path = source_root / "app.py"
+    text = app_path.read_text(encoding="utf-8")
+    if _OLD in text:
+        app_path.write_text(text.replace(_OLD, _NEW, 1), encoding="utf-8")
