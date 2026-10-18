@@ -1,11 +1,5 @@
-"""Streamlit Cloud entry point for the Applied AI SampleID app.
+"""Deployable replica of Sri's Lastrada app with a separate DTW Lab page."""
 
-This keeps the cloud deployment path simple while the actual app code
-remains in sony_sampleid/app.py.
-"""
+from source_loader import run_source_script
 
-from pathlib import Path
-import runpy
-
-APP = Path(__file__).parent / "sony_sampleid" / "app.py"
-runpy.run_path(str(APP), run_name="__main__")
+run_source_script("app.py")
