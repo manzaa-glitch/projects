@@ -14,6 +14,8 @@ import shutil
 import subprocess
 import sys
 
+from app_integration import patch_app
+
 SOURCE_REPOSITORY = "https://github.com/tankr98/Lastrada.git"
 SOURCE_BRANCH = "feat/lastrada-dtw-replica"
 SOURCE_DIR = Path(os.getenv("LASTRADA_REPLICA_SOURCE_DIR", "/tmp/lastrada-dtw-replica"))
@@ -43,6 +45,9 @@ def ensure_source() -> Path:
 
 def run_source_script(relative_path: str) -> None:
     root = ensure_source()
+    if relative_path == "app.py":
+        patch_app(root)
+
     script = root / relative_path
     if not script.is_file():
         raise FileNotFoundError(f"Lastrada source script not found: {script}")
