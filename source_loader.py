@@ -14,7 +14,7 @@ import shutil
 import subprocess
 import sys
 
-from app_integration import patch_app
+from app_integration_fix import patch_app
 
 SOURCE_REPOSITORY = "https://github.com/tankr98/Lastrada.git"
 SOURCE_BRANCH = "feat/lastrada-dtw-replica"
