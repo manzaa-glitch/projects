@@ -65,17 +65,36 @@ def main() -> int:
         print("\nRESULT: FAIL - Python packages are missing.")
         return 3
 
+    print("\nChecking Sony package layout...")
+    try:
+        import sampleid
+        from sampleid import SampleID
+
+        package_root = Path(sampleid.__file__).resolve().parent
+        model_source = package_root / "src"
+        print("sampleid module:", sampleid.__file__)
+        print("checkpoint model-source directory:", model_source)
+        print("model-source directory exists:", model_source.is_dir())
+        import src.networks.resnet_ibn  # noqa: F401
+        print("Hydra target src.networks.resnet_ibn.ResnetIBN: importable")
+    except Exception:
+        print("\nRESULT: FAIL - Sony is installed without the model modules required by the checkpoint.")
+        print("This happens when Sony's current package is installed as a normal wheel.")
+        print("Run: powershell -ExecutionPolicy Bypass -File .\\repair_sampleid.ps1")
+        print()
+        traceback.print_exc()
+        return 4
+
     print(f"\nTrying to load checkpoint: {valid}")
     try:
         import torch
-        from sampleid import SampleID
 
         model = SampleID.load_checkpoint(str(valid), device=torch.device("cpu"))
         model.eval()
     except Exception:
         print("\nRESULT: FAIL - checkpoint/model load raised this exception:")
         traceback.print_exc()
-        return 4
+        return 5
 
     print("\nRESULT: PASS - Sony SampleID checkpoint loaded successfully on CPU.")
     return 0
