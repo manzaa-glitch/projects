@@ -15,14 +15,14 @@ import shutil
 import subprocess
 import sys
 
-from analysis_diagnostics import patch_app
+from analysis_integration_v2 import patch_app
 
 SOURCE_REPOSITORY = "https://github.com/tankr98/Lastrada.git"
 SOURCE_BRANCH = "feat/lastrada-dtw-replica"
 SOURCE_DIR = Path(
     os.getenv(
         "LASTRADA_REPLICA_SOURCE_DIR",
-        "/tmp/lastrada-sony-dtw-default-v1",
+        "/tmp/lastrada-sony-dtw-strict-v2",
     )
 )
 
