@@ -1,0 +1,34 @@
+name: Validate Lastrada Sony DTW replica
+
+on:
+  push:
+    branches: [lastrada-dtw-replica]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Clone shared Lastrada source
+        run: |
+          git clone --depth 1 --branch feat/lastrada-dtw-replica \
+            https://github.com/tankr98/Lastrada.git /tmp/lastrada-source
+      - name: Apply and compile integration
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from analysis_integration import patch_app
+
+          root = Path('/tmp/lastrada-source')
+          patch_app(root)
+          source = (root / 'app.py').read_text(encoding='utf-8')
+          compile(source, str(root / 'app.py'), 'exec')
+          assert 'LASTRADA_SONY_DTW_DEFAULT_ANALYSIS_V1' in source
+          assert 'Use Sony SampleID + guarded DTW timing analysis' in source
+          assert 'Automated timing provenance' in source
+          print('Sony + DTW integration patch compiled successfully')
+          PY
