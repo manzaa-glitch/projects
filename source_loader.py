@@ -1,8 +1,9 @@
-"""Load the Lastrada DTW replica source branch for Streamlit Cloud.
+"""Load the Lastrada Sony + DTW replica source branch for Streamlit Cloud.
 
 The user's repository owns the deployment, while the application source stays
-on the shared Lastrada development branch. The clone is cached in /tmp for the
-lifetime of the Streamlit container.
+on the shared Lastrada development branch. A deterministic runtime integration
+makes Sony SampleID the default master-timing path and uses guarded DTW to refine
+its candidates inside the normal seven-step workflow.
 """
 
 from __future__ import annotations
@@ -14,11 +15,16 @@ import shutil
 import subprocess
 import sys
 
-from app_integration_fix import patch_app
+from analysis_integration import patch_app
 
 SOURCE_REPOSITORY = "https://github.com/tankr98/Lastrada.git"
 SOURCE_BRANCH = "feat/lastrada-dtw-replica"
-SOURCE_DIR = Path(os.getenv("LASTRADA_REPLICA_SOURCE_DIR", "/tmp/lastrada-dtw-replica"))
+SOURCE_DIR = Path(
+    os.getenv(
+        "LASTRADA_REPLICA_SOURCE_DIR",
+        "/tmp/lastrada-sony-dtw-default-v1",
+    )
+)
 
 
 def ensure_source() -> Path:
